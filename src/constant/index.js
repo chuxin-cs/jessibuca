@@ -250,6 +250,7 @@ export const VIDEO_ENC_CODE = {
 
 export const AUDIO_ENC_TYPE = {
     10: 'AAC',
+    2: 'MP3',
     7: 'ALAW',
     8: 'MULAW'
 }
@@ -332,6 +333,5 @@ export const FRAME_TYPE_EX = {
     FT_KEY: 0x10,
     FT_INTER: 0x20
 };
-
 
 

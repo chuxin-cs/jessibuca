@@ -132,6 +132,12 @@ public:
             jsObject.call<void>("setAudioCodec", audioType);
             switch (audioType)
             {
+            case 2:
+                initCodec(AV_CODEC_ID_MP3);
+                avcodec_open2(dec_ctx, codec, NULL);
+                n_channel = dec_ctx->channels > 0 ? dec_ctx->channels : 2;
+                initialized = true;
+                break;
             case 10:
                 if (!input[1])
                 {

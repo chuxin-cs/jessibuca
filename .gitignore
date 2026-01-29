@@ -11,4 +11,5 @@ yarn.lock
 package-lock.json
 .DS_Store
 demo/public/pro/js
+ffmpeg
 
