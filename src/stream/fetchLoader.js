@@ -2,8 +2,8 @@ import Emitter from "../utils/emitter";
 import {EVENTS, EVENTS_ERROR, FETCH_ERROR, JESSIBUCA_EVENTS} from "../constant";
 import {calculationRate, isFalse, isFetchSuccess, now} from "../utils";
 
-const DEMUX_BUFFER_HIGH_WATER = 1200;
-const DEMUX_BUFFER_LOW_WATER = 600;
+const DEMUX_BUFFER_HIGH_WATER = 360;
+const DEMUX_BUFFER_LOW_WATER = 180;
 
 export default class FetchLoader extends Emitter {
     constructor(player) {

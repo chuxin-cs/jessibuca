@@ -20,6 +20,8 @@ export default class VideoLoader extends CommonLoader {
         $videoElement.style.top = 0;
         $videoElement.style.left = 0;
         this._delayPlay = false;
+        this._videoWritePromise = Promise.resolve();
+        this._videoWriteQueueSize = 0;
         player.$container.appendChild($videoElement);
         this.videoInfo = {
             width: '',
@@ -86,6 +88,8 @@ export default class VideoLoader extends CommonLoader {
             await this.vwriter.close();
             this.vwriter = null;
         }
+        this._videoWritePromise = Promise.resolve();
+        this._videoWriteQueueSize = 0;
         this.player.debug.log('Video', 'destroy');
     }
 
@@ -206,9 +210,24 @@ export default class VideoLoader extends CommonLoader {
     //
     render(msg) {
         if (this.vwriter) {
-            this.vwriter.write(msg.videoFrame);
-            //  release memory
-            msg.videoFrame.close();
+            const videoFrame = msg.videoFrame;
+            const writer = this.vwriter;
+
+            if (this._videoWriteQueueSize > 30) {
+                videoFrame.close();
+                return;
+            }
+
+            this._videoWriteQueueSize++;
+            this._videoWritePromise = this._videoWritePromise.then(() => writer.ready)
+                .then(() => writer.write(videoFrame))
+                .catch((error) => {
+                    this.player.debug.warn('Video', 'write video frame error', error);
+                })
+                .finally(() => {
+                    this._videoWriteQueueSize--;
+                    videoFrame.close();
+                });
         }
     }
 

@@ -5,6 +5,7 @@ export default class DecoderWorker {
     constructor(player) {
         this.player = player;
         this.decoderWorker = new Worker(player._opt.decoder)
+        this._pendingAudioList = [];
         this._initDecoderWorker();
         player.debug.log('decoderWorker', 'init')
     }
@@ -15,8 +16,46 @@ export default class DecoderWorker {
             this.decoderWorker.terminate();
             this.decoderWorker = null;
         }
+        this._pendingAudioList = [];
 
         this.player.debug.log(`decoderWorker`, 'destroy');
+    }
+
+    _flushPendingAudio() {
+        const {audio} = this.player;
+        if (!audio || !this.player.playing || !this._pendingAudioList.length) {
+            return;
+        }
+
+        const pendingAudioList = this._pendingAudioList;
+        this._pendingAudioList = [];
+        pendingAudioList.forEach(({buffer, ts}) => {
+            audio.play(buffer, ts);
+        });
+    }
+
+    _playAudio(msg) {
+        const {audio} = this.player;
+        if (!audio) {
+            return;
+        }
+
+        if (this.player.playing) {
+            this._flushPendingAudio();
+            audio.play(msg.buffer, msg.ts);
+            return;
+        }
+
+        if (this.player.loading) {
+            this._pendingAudioList.push({
+                buffer: msg.buffer,
+                ts: msg.ts
+            });
+
+            while (this._pendingAudioList.length > 20) {
+                this._pendingAudioList.shift();
+            }
+        }
     }
 
     _initDecoderWorker() {
@@ -74,6 +113,7 @@ export default class DecoderWorker {
                 case WORKER_CMD_TYPE.render:
                     // debug.log(`decoderWorker`, 'onmessage:', WORKER_CMD_TYPE.render, `msg ts:${msg.ts}`);
                     this.player.handleRender();
+                    this._flushPendingAudio();
                     this.player.video.render(msg);
                     this.player.emit(EVENTS.timeUpdate, msg.ts)
                     this.player.updateStats({fps: true, ts: msg.ts, buf: msg.delay})
@@ -84,10 +124,7 @@ export default class DecoderWorker {
                     break;
                 case WORKER_CMD_TYPE.playAudio:
                     // debug.log(`decoderWorker`, 'onmessage:', WORKER_CMD_TYPE.playAudio, `msg ts:${msg.ts}`);
-                    // 只有在 playing 的时候。
-                    if (this.player.playing && this.player.audio) {
-                        this.player.audio.play(msg.buffer, msg.ts);
-                    }
+                    this._playAudio(msg);
                     break;
                 case WORKER_CMD_TYPE.wasmError:
                     if (msg.message) {

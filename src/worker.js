@@ -120,7 +120,7 @@ Module.postRun = function () {
         }
 
         state.pacedSampleRate = sampleRate || state.pacedSampleRate;
-        if (state.pacedPrimeCount < 12) {
+        if (state.pacedPrimeCount < 24) {
             state.pacedPrimeCount++;
             postAudioChunk(outputArray, ts);
             return;
