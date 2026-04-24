@@ -2,6 +2,21 @@ import Emitter from "../utils/emitter";
 import {FRAME_HEADER_EX, FRAME_TYPE_EX, MEDIA_TYPE, PACKET_TYPE_EX} from "../constant";
 import {hevcEncoderNalePacketNotLength} from "../utils";
 
+function shouldDecodeAudioWhileDropping(payload) {
+    if (!payload || payload.length === 0) {
+        return false;
+    }
+
+    const audioType = payload[0] >> 4;
+
+    // AAC needs its sequence header, while MP3/G711 can bootstrap from normal frames.
+    if (audioType === 10) {
+        return payload.length > 1 && payload[1] === 0;
+    }
+
+    return audioType === 2 || audioType === 7 || audioType === 8;
+}
+
 export default class CommonLoader extends Emitter {
     constructor(player) {
         super();
@@ -81,12 +96,12 @@ export default class CommonLoader extends Emitter {
                 if (this.dropping) {
                     // this.player.debug.log('common dumex', `is dropping`);
                     data = this.bufferList.shift();
-                    if (data.type === MEDIA_TYPE.audio && data.payload[1] === 0) {
+                    if (data.type === MEDIA_TYPE.audio && shouldDecodeAudioWhileDropping(data.payload)) {
                         this._doDecoderDecode(data);
                     }
                     while (!data.isIFrame && this.bufferList.length) {
                         data = this.bufferList.shift();
-                        if (data.type === MEDIA_TYPE.audio && data.payload[1] === 0) {
+                        if (data.type === MEDIA_TYPE.audio && shouldDecodeAudioWhileDropping(data.payload)) {
                             this._doDecoderDecode(data);
                         }
                     }

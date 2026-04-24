@@ -100,9 +100,15 @@ public:
 class FFmpegAudioDecoder : public FFmpeg
 {
     SwrContext *au_convert_ctx = nullptr;
-    u8 *out_buffer[2];
-    int output_nb_samples;
-    int n_channel;
+    u8 *out_buffer[2] = {nullptr, nullptr};
+    int output_nb_samples = 0;
+    int n_channel = 0;
+    bool audioPlanarInitialized = false;
+    uint64_t input_channel_layout = 0;
+    uint64_t output_channel_layout = 0;
+    int input_sample_rate = 0;
+    int output_sample_rate = 0;
+    AVSampleFormat input_sample_fmt = AV_SAMPLE_FMT_NONE;
 
 public:
     PROP(sample_rate, int)
@@ -113,11 +119,29 @@ public:
     }
     ~FFmpegAudioDecoder()
     {
-        if (au_convert_ctx)
-            swr_free(&au_convert_ctx);
-        if (out_buffer[0])
-            free(out_buffer[0]);
+        clear();
         //        emscripten_log(0, "FFMpegAudioDecoder destory");
+    }
+    void clear()
+    {
+        if (au_convert_ctx)
+        {
+            swr_free(&au_convert_ctx);
+        }
+        if (out_buffer[0])
+        {
+            av_free(out_buffer[0]);
+            out_buffer[0] = nullptr;
+            out_buffer[1] = nullptr;
+        }
+        output_nb_samples = 0;
+        audioPlanarInitialized = false;
+        input_channel_layout = 0;
+        output_channel_layout = 0;
+        input_sample_rate = 0;
+        output_sample_rate = 0;
+        input_sample_fmt = AV_SAMPLE_FMT_NONE;
+        FFmpeg::clear();
     }
     int decode(string input, u32 timestamp) override
     {
@@ -167,32 +191,67 @@ public:
                 //                emscripten_log(0, "audio type not support:%d", audioType);
                 break;
             }
-            if (initialized)
-            {
-                jsObject.call<void>("initAudioPlanar", n_channel, sample_rate);
-            }
         }
         return 0;
     }
     void _decode(u32 timestamp) override
     {
         auto nb_samples = frame->nb_samples;
+        auto output_channels = n_channel > 0 ? n_channel : (frame->channels > 0 ? frame->channels : 2);
+        auto decoded_sample_rate = frame->sample_rate > 0 ? frame->sample_rate : dec_ctx->sample_rate;
+        auto target_sample_rate = sample_rate > 0 ? sample_rate : decoded_sample_rate;
+        auto decoded_channels = frame->channels > 0 ? frame->channels : (dec_ctx->channels > 0 ? dec_ctx->channels : output_channels);
+        auto decoded_layout = frame->channel_layout ? frame->channel_layout : (dec_ctx->channel_layout ? dec_ctx->channel_layout : av_get_default_channel_layout(decoded_channels));
+        auto target_layout = output_channels == 1 ? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO;
+        auto frame_sample_fmt = (AVSampleFormat)frame->format;
         auto bytes_per_sample = av_get_bytes_per_sample(AV_SAMPLE_FMT_FLTP);
-        if (dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLTP && sample_rate == dec_ctx->sample_rate && dec_ctx->channel_layout == n_channel)
+
+        if (!audioPlanarInitialized && output_channels > 0 && target_sample_rate > 0)
         {
-            jsObject.call<void>("playAudioPlanar", int(frame->data), nb_samples * bytes_per_sample * n_channel);
+            jsObject.call<void>("initAudioPlanar", output_channels, target_sample_rate);
+            audioPlanarInitialized = true;
+        }
+
+        if (frame_sample_fmt == AV_SAMPLE_FMT_FLTP && target_sample_rate == decoded_sample_rate && decoded_layout == target_layout && decoded_channels == output_channels)
+        {
+            jsObject.call<void>("playAudioPlanar", int(frame->data), nb_samples, timestamp);
             return;
         }
-        if (!au_convert_ctx)
+
+        if (!au_convert_ctx || input_channel_layout != decoded_layout || output_channel_layout != target_layout ||
+            input_sample_rate != decoded_sample_rate || output_sample_rate != target_sample_rate ||
+            input_sample_fmt != frame_sample_fmt || nb_samples > output_nb_samples)
         {
-            au_convert_ctx = swr_alloc_set_opts(NULL, n_channel == 2 ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO, AV_SAMPLE_FMT_FLTP, sample_rate,
-                                                dec_ctx->channel_layout, dec_ctx->sample_fmt, dec_ctx->sample_rate,
+            if (au_convert_ctx)
+            {
+                swr_free(&au_convert_ctx);
+            }
+            if (out_buffer[0])
+            {
+                av_free(out_buffer[0]);
+                out_buffer[0] = nullptr;
+                out_buffer[1] = nullptr;
+            }
+
+            input_channel_layout = decoded_layout;
+            output_channel_layout = target_layout;
+            input_sample_rate = decoded_sample_rate;
+            output_sample_rate = target_sample_rate;
+            input_sample_fmt = frame_sample_fmt;
+            output_nb_samples = nb_samples;
+
+            au_convert_ctx = swr_alloc_set_opts(NULL, target_layout, AV_SAMPLE_FMT_FLTP, target_sample_rate,
+                                                decoded_layout, frame_sample_fmt, decoded_sample_rate,
                                                 0, NULL);
             auto ret = swr_init(au_convert_ctx);
-            auto out_buffer_size = av_samples_get_buffer_size(NULL, n_channel, nb_samples, AV_SAMPLE_FMT_FLTP, 0);
+            if (ret < 0)
+            {
+                return;
+            }
+            auto out_buffer_size = av_samples_get_buffer_size(NULL, output_channels, output_nb_samples, AV_SAMPLE_FMT_FLTP, 0);
             auto buffer = (uint8_t *)av_malloc(out_buffer_size);
             out_buffer[0] = buffer;
-            out_buffer[1] = buffer + (out_buffer_size / 2);
+            out_buffer[1] = output_channels == 2 ? buffer + (out_buffer_size / 2) : nullptr;
         }
         // // 转换
         auto ret = swr_convert(au_convert_ctx, out_buffer, nb_samples, (const uint8_t **)frame->data, nb_samples);

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Jessibuca MP3 Check</title>
+    <script src="./jessibuca.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: Arial, sans-serif;
+            background: #111827;
+            color: #e5e7eb;
+        }
+
+        .shell {
+            max-width: 920px;
+            margin: 0 auto;
+        }
+
+        #container {
+            width: 800px;
+            height: 450px;
+            max-width: 100%;
+            background: #000;
+            margin-bottom: 16px;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        input {
+            flex: 1;
+            min-width: 360px;
+            padding: 8px 10px;
+        }
+
+        button {
+            padding: 8px 14px;
+            cursor: pointer;
+        }
+
+        pre {
+            background: #030712;
+            color: #d1fae5;
+            padding: 12px;
+            border: 1px solid #374151;
+            min-height: 180px;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <h2>Jessibuca MP3 Check</h2>
+    <div id="container"></div>
+    <div class="row">
+        <input id="playUrl" placeholder="请输入 http-flv / ws-flv 地址" />
+        <button id="play">播放</button>
+        <button id="pause">停止</button>
+        <button id="resumeAudio">恢复音频</button>
+    </div>
+    <pre id="log"></pre>
+</div>
+
+<script>
+    const $container = document.getElementById('container');
+    const $playUrl = document.getElementById('playUrl');
+    const $play = document.getElementById('play');
+    const $pause = document.getElementById('pause');
+    const $resumeAudio = document.getElementById('resumeAudio');
+    const $log = document.getElementById('log');
+
+    function appendLog(...args) {
+        const line = args.map(item => {
+            if (typeof item === 'string') {
+                return item;
+            }
+            try {
+                return JSON.stringify(item);
+            } catch (error) {
+                return String(item);
+            }
+        }).join(' ');
+
+        $log.textContent += line + '\n';
+        $log.scrollTop = $log.scrollHeight;
+        console.log('[mp3-check]', ...args);
+    }
+
+    const jessibuca = new Jessibuca({
+        container: $container,
+        decoder: './decoder.js',
+        videoBuffer: 1.5,
+        videoBufferDelay: 2,
+        loadingTimeout: 20,
+        heartTimeout: 20,
+        debug: true,
+        useWCS: false,
+        useMSE: false,
+        autoWasm: false,
+        hasAudio: true,
+        hasVideo: true,
+        isNotMute: true,
+        wasmDecodeAudioSyncVideo: false,
+        operateBtns: {
+            audio: true,
+            play: true,
+            fullscreen: true,
+            screenshot: false,
+            record: false,
+        },
+    });
+
+    jessibuca.on('audioInfo', (data) => appendLog('audioInfo', data));
+    jessibuca.on('videoInfo', (data) => appendLog('videoInfo', data));
+    jessibuca.on('stats', (data) => appendLog('stats', data));
+    jessibuca.on('play', () => appendLog('play'));
+    jessibuca.on('start', () => appendLog('start'));
+    jessibuca.on('pause', () => appendLog('pause'));
+    jessibuca.on('mute', (data) => appendLog('mute', data));
+    jessibuca.on('error', (type, message) => appendLog('error', type, message));
+
+    $play.addEventListener('click', () => {
+        const url = $playUrl.value.trim();
+        if (!url) {
+            appendLog('error', '播放地址为空');
+            return;
+        }
+
+        jessibuca.play(url).then(() => {
+            jessibuca.cancelMute();
+            jessibuca.audioResume();
+            jessibuca.setVolume(1);
+            appendLog('play resolved', {
+                isMute: jessibuca.isMute(),
+                hasLoaded: jessibuca.hasLoaded(),
+            });
+        }).catch((error) => {
+            appendLog('play rejected', String(error));
+        });
+    });
+
+    $pause.addEventListener('click', () => {
+        jessibuca.pause().then(() => {
+            appendLog('pause resolved');
+        }).catch((error) => {
+            appendLog('pause rejected', String(error));
+        });
+    });
+
+    $resumeAudio.addEventListener('click', () => {
+        jessibuca.cancelMute();
+        jessibuca.audioResume();
+        jessibuca.setVolume(1);
+        appendLog('audio resume requested');
+    });
+</script>
+</body>
+</html>

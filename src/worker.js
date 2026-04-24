@@ -3,6 +3,20 @@ import createWebGL from './utils/webgl';
 import {WORKER_CMD_TYPE, MEDIA_TYPE, WORKER_SEND_TYPE, ENCODED_VIDEO_TYPE, DEFAULT_PLAYER_OPTIONS} from "./constant";
 import {formatVideoDecoderConfigure, isGreenYUV} from "./utils";
 
+function shouldDecodeAudioWhileDropping(payload) {
+    if (!payload || payload.length === 0) {
+        return false;
+    }
+
+    const audioType = payload[0] >> 4;
+
+    if (audioType === 10) {
+        return payload.length > 1 && payload[1] === 0;
+    }
+
+    return audioType === 2 || audioType === 7 || audioType === 8;
+}
+
 if (!Date.now) Date.now = function () {
     return new Date().getTime();
 };
@@ -252,14 +266,14 @@ Module.postRun = function () {
                         // // dropping
                         data = buffer.shift();
                         //
-                        if (data.type === MEDIA_TYPE.audio && data.payload[1] === 0) {
+                        if (data.type === MEDIA_TYPE.audio && shouldDecodeAudioWhileDropping(data.payload)) {
                             _doDecode(data);
                         }
                         while (!data.isIFrame && buffer.length) {
                             // dropping
                             data = buffer.shift();
                             //
-                            if (data.type === MEDIA_TYPE.audio && data.payload[1] === 0) {
+                            if (data.type === MEDIA_TYPE.audio && shouldDecodeAudioWhileDropping(data.payload)) {
                                 _doDecode(data);
                             }
                         }
