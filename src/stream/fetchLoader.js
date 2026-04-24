@@ -2,6 +2,9 @@ import Emitter from "../utils/emitter";
 import {EVENTS, EVENTS_ERROR, FETCH_ERROR, JESSIBUCA_EVENTS} from "../constant";
 import {calculationRate, isFalse, isFetchSuccess, now} from "../utils";
 
+const DEMUX_BUFFER_HIGH_WATER = 1200;
+const DEMUX_BUFFER_LOW_WATER = 600;
+
 export default class FetchLoader extends Emitter {
     constructor(player) {
         super();
@@ -51,6 +54,28 @@ export default class FetchLoader extends Emitter {
 
             const reader = res.body.getReader();
             this.emit(EVENTS.streamSuccess);
+            const waitForDemuxBuffer = (next) => {
+                const bufferList = demux && demux.bufferList;
+                if (!bufferList || bufferList.length < DEMUX_BUFFER_HIGH_WATER) {
+                    next();
+                    return;
+                }
+
+                const wait = () => {
+                    if (!this.abortController || !demux || !demux.bufferList) {
+                        return;
+                    }
+
+                    if (demux.bufferList.length <= DEMUX_BUFFER_LOW_WATER) {
+                        next();
+                        return;
+                    }
+
+                    setTimeout(wait, 20);
+                };
+
+                wait();
+            };
             const fetchNext = () => {
                 reader.read().then(({done, value}) => {
                         if (done) {
@@ -58,7 +83,7 @@ export default class FetchLoader extends Emitter {
                         } else {
                             this.streamRate && this.streamRate(value.byteLength * 8);
                             demux.dispatch(value);
-                            fetchNext();
+                            waitForDemuxBuffer(fetchNext);
                         }
                     }
                 ).catch((e) => {

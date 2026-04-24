@@ -47,6 +47,7 @@ export default class WebcodecsDecoder extends Emitter {
         if (this.player.isDestroyedOrClosed()) {
             return;
         }
+        const timestamp = Math.max(Math.round((videoFrame.timestamp || 0) / 1000), 0);
 
         if (!this.isInitInfo) {
             this.player.video.updateVideoInfo({
@@ -63,11 +64,14 @@ export default class WebcodecsDecoder extends Emitter {
         }
 
         this.player.handleRender();
+        this.player.videoTimestamp = timestamp;
         this.player.video.render({
-            videoFrame
+            videoFrame,
+            ts: timestamp
         })
+        this.player.emit(EVENTS.timeUpdate, timestamp)
 
-        this.player.updateStats({fps: true, ts: 0, buf: this.player.demux.delay})
+        this.player.updateStats({fps: true, ts: timestamp, buf: this.player.demux.delay})
     }
 
     handleError(error) {
@@ -98,9 +102,21 @@ export default class WebcodecsDecoder extends Emitter {
                 try {
                     this.decoder.configure(config);
                 } catch (e) {
-                    this.player.debug.error('Webcodecs', 'VideoDecoder configure', e);
-                    this.player.emit(EVENTS_ERROR.webcodecsConfigureError);
-                    return;
+                    if (config.hardwareAcceleration) {
+                        try {
+                            const fallbackConfig = Object.assign({}, config);
+                            delete fallbackConfig.hardwareAcceleration;
+                            this.decoder.configure(fallbackConfig);
+                        } catch (fallbackError) {
+                            this.player.debug.error('Webcodecs', 'VideoDecoder configure', fallbackError);
+                            this.player.emit(EVENTS_ERROR.webcodecsConfigureError);
+                            return;
+                        }
+                    } else {
+                        this.player.debug.error('Webcodecs', 'VideoDecoder configure', e);
+                        this.player.emit(EVENTS_ERROR.webcodecsConfigureError);
+                        return;
+                    }
                 }
                 this.hasInit = true;
             }
@@ -127,7 +143,7 @@ export default class WebcodecsDecoder extends Emitter {
             if (this.isDecodeFirstIIframe) {
                 const chunk = new EncodedVideoChunk({
                     data: payload.slice(5),
-                    timestamp: ts,
+                    timestamp: Math.max(ts, 0) * 1000,
                     type: isIframe ? ENCODED_VIDEO_TYPE.key : ENCODED_VIDEO_TYPE.delta
                 })
                 this.player.emit(EVENTS.timeUpdate, ts);

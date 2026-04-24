@@ -292,7 +292,8 @@ export function formatVideoDecoderConfigure(avcC) {
 
     return {
         codec: codecString,
-        description: avcC
+        description: avcC,
+        hardwareAcceleration: 'prefer-hardware'
     }
 }
 
