@@ -20,6 +20,7 @@ SARGS = {
     "USE_PTHREADS": 0,
     "ALLOW_MEMORY_GROWTH": 1,
     "ENVIRONMENT": "web,worker",
+    "EXPORTED_RUNTIME_METHODS": "['HEAPU8','HEAPU32','HEAPF32']",
 }
 
 
